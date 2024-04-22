@@ -1,5 +1,16 @@
 add_compile_options(-std=c++14)
 
+# Option to enable verbose output
+option(VERBOSE "Enable verbose output, including compiler warnings" OFF)
+
+# Conditional warning suppression
+if(NOT VERBOSE)
+  add_compile_options(
+    $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-w>
+    $<$<CXX_COMPILER_ID:MSVC>:/W0>
+  )
+endif()
+
 cmake_minimum_required(VERSION 2.8)
 project(ORB_SLAM3)
 
