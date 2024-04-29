@@ -1,0 +1,10 @@
+{
+    "dependencies": [
+      "opencv4",
+      "eigen3",
+      "pangolin",
+      "boost-serialization",
+      "realsense2",
+      "openssl"
+    ]
+  }

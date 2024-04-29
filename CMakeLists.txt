@@ -1,18 +1,9 @@
-add_compile_options(-std=c++14)
-
-# Option to enable verbose output
-option(VERBOSE "Enable verbose output, including compiler warnings" OFF)
-
-# Conditional warning suppression
-if(NOT VERBOSE)
-  add_compile_options(
-    $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-w>
-    $<$<CXX_COMPILER_ID:MSVC>:/W0>
-  )
-endif()
-
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.19)
 project(ORB_SLAM3)
+
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(Boost_NO_WARN_NEW_VERSIONS 1)
 
 IF(NOT CMAKE_BUILD_TYPE)
   SET(CMAKE_BUILD_TYPE Release)
@@ -20,51 +11,41 @@ ENDIF()
 
 MESSAGE("Build type: " ${CMAKE_BUILD_TYPE})
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}  -Wall   -O3")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall   -O3")
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=native")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=native")
+# Global compiler options
+add_compile_options(-Wall -O3)
 
-# Check C++11 or C++0x support
-include(CheckCXXCompilerFlag)
-CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
-if(COMPILER_SUPPORTS_CXX11)
-   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-   add_definitions(-DCOMPILEDWITHC11)
-   message(STATUS "Using flag -std=c++11.")
-elseif(COMPILER_SUPPORTS_CXX0X)
-   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
-   add_definitions(-DCOMPILEDWITHC0X)
-   message(STATUS "Using flag -std=c++0x.")
-else()
-   message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
+# Option to enable verbose output
+option(VERBOSE "Enable verbose output, including compiler warnings" OFF)
+
+if(NOT VERBOSE)
+  add_compile_options(
+    $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>>:-w>
+    $<$<CXX_COMPILER_ID:MSVC>:/W0>
+  )
+endif()
+
+# Release-specific optimization
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  add_compile_options(-march=native)
 endif()
 
 LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 
-find_package(OpenCV 4.4)
-   if(NOT OpenCV_FOUND)
-      message(FATAL_ERROR "OpenCV > 4.4 not found.")
-   endif()
-
-MESSAGE("OPENCV VERSION:")
-MESSAGE(${OpenCV_VERSION})
-
-find_package(Eigen3 3.1.0 REQUIRED)
-find_package(Pangolin REQUIRED)
-find_package(realsense2)
-
-include_directories(
-${PROJECT_SOURCE_DIR}
-${PROJECT_SOURCE_DIR}/include
-${PROJECT_SOURCE_DIR}/include/CameraModels
-${PROJECT_SOURCE_DIR}/Thirdparty/Sophus
-${EIGEN3_INCLUDE_DIR}
-${Pangolin_INCLUDE_DIRS}
-)
-
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
+
+# Add third-party dependencies
+add_subdirectory(Thirdparty/DBoW2)
+add_subdirectory(Thirdparty/g2o)
+add_subdirectory(Thirdparty/Sophus)
+
+# Uncompress vocabulary as part of the build process
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/Vocabulary/ORBvoc.txt
+    COMMAND tar -xzf ${CMAKE_CURRENT_SOURCE_DIR}/Vocabulary/ORBvoc.txt.tar.gz -C ${CMAKE_CURRENT_SOURCE_DIR}/Vocabulary
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Vocabulary/ORBvoc.txt.tar.gz
+    COMMENT "Uncompressing vocabulary"
+)
+add_custom_target(uncompress_vocabulary ALL DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/Vocabulary/ORBvoc.txt)
 
 add_library(${PROJECT_NAME} SHARED
 src/System.cc
@@ -126,28 +107,41 @@ include/SerializationUtils.h
 include/Config.h
 include/Settings.h)
 
-add_subdirectory(Thirdparty/g2o)
+set(OpenCV_DIR "${VCPKG_INSTALLED_DIR}/x64-linux/share/opencv4")
 
-target_link_libraries(${PROJECT_NAME}
-${OpenCV_LIBS}
-${EIGEN3_LIBS}
-${Pangolin_LIBRARIES}
-${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
-${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
--lboost_serialization
--lcrypto
+# Finding packages
+find_package(OpenCV REQUIRED)
+find_package(Eigen3 REQUIRED NO_MODULE)
+find_package(Pangolin CONFIG REQUIRED)
+find_package(realsense2 CONFIG REQUIRED)
+find_package(Boost REQUIRED COMPONENTS serialization)
+find_package(OpenSSL REQUIRED)
+
+target_include_directories(${PROJECT_NAME}
+  PUBLIC
+    ${PROJECT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/CameraModels
+    ${EIGEN3_INCLUDE_DIR}
+    ${Pangolin_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
+    ${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2
+    ${PROJECT_SOURCE_DIR}/Thirdparty/Sophus
 )
 
-# If RealSense SDK is found the library is added and its examples compiled
-if(realsense2_FOUND)
-    include_directories(${PROJECT_NAME}
-    ${realsense_INCLUDE_DIR}
-    )
-    target_link_libraries(${PROJECT_NAME}
-    ${realsense2_LIBRARY}
-    )
-endif()
+target_link_libraries(${PROJECT_NAME}
+  PUBLIC
+    ${OpenCV_LIBS}
+    Eigen3::Eigen
+    ${Pangolin_LIBRARIES}
+    realsense2::fw realsense2::usb realsense2::rsutils realsense2::realsense2
+    Boost::boost Boost::serialization
+    ${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
+    ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
+    OpenSSL::SSL OpenSSL::Crypto
+)
 
+add_dependencies(${PROJECT_NAME} uncompress_vocabulary)
 
 # Build examples
 
