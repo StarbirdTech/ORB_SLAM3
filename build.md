@@ -34,7 +34,7 @@ cmake --preset ninja-build
 cmake --build --preset build-default
 ```
 
-Test by running example:
+Test by running example (broken in VSCode terminal):
 ```bash
 cd Examples
 ./Monocular/mono_euroc ../Vocabulary/ORBvoc.txt ./Monocular/EuRoC.yaml ../Datasets/EuRoC/MH01 ./Monocular/EuRoC_TimeStamps/MH01.txt dataset-MH01_mono
