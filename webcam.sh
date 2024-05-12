@@ -1,0 +1,1 @@
+./Examples/Monocular/mono_webcam ./Vocabulary/ORBvoc.txt ./webcam.yaml
